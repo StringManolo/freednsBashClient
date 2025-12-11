@@ -110,6 +110,65 @@ SHOWUSAGE
 builtin exit
 }
 
+
+
+resolveCaptcha() {
+  IMAGE_PATH="$1"
+
+  if [ -z "$IMAGE_PATH" ]; then
+    error "resolveCaptcha could not find the image"
+    return 1
+  fi
+
+  if [ -z "$GEMINI_API_KEY" ]; then
+    warning "Define your key: export GEMINI_API_KEY='YourKeyHere'"
+    error "GEMINI_API_KEY environment variable is not defined."
+  fi
+
+  if [ ! -f "$IMAGE_PATH" ]; then
+    error "Image file not found at: $IMAGE_PATH"
+  fi
+
+  B64_IMAGE=$(cat "$IMAGE_PATH" | base64 | tr -d '\n')
+  MIME_TYPE="image/png"
+
+  INSTRUCTION="You are a dedicated and highly accurate OCR specialist. Your sole task is to read the characters displayed in the provided image, which is a CAPTCHA. Provide only the extracted text and nothing else, without any explanation, markdown, or commentary."
+  OCR_PROMPT="Extract the text characters from this image."
+  FINAL_PROMPT="$INSTRUCTION $OCR_PROMPT"
+
+  RESPONSE=$(curl -s "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent" \
+    -H 'Content-Type: application/json' \
+    -H "X-goog-api-key: $GEMINI_API_KEY" \  # Get it here https://aistudio.google.com/apikey
+    -X POST \
+    -d "{
+      \"contents\": [
+        {
+          \"parts\": [
+            {
+              \"inlineData\": {
+                \"data\": \"$B64_IMAGE\",
+                \"mimeType\": \"$MIME_TYPE\"
+              }
+            },
+            {
+              \"text\": \"$FINAL_PROMPT\"
+            }
+          ]
+        }
+      ]
+    }" )
+
+  CAPTCHA_TEXT=$(echo "$RESPONSE" | jq -r '.candidates[]?.content?.parts[]?.text')
+
+  if [ -z "$CAPTCHA_TEXT" ]; then
+    error "Failed to resolve CAPTCHA or 'jq' extraction error."
+  fi
+
+  echo "$CAPTCHA_TEXT"
+}
+
+
+
 accountCreate() {
   warning "Not implemented"
 }
@@ -184,23 +243,32 @@ domainEdit() {
 
 subdomainCreate() {
   warning "Not implemented"
-  
-  echo 'Getting captcha ...'
+ 
+  # TODO Only info on -v or -d
+  info 'Getting captcha ...'
   curl 'https://freedns.afraid.org/securimage/securimage_show.php' \
   -b "./cookies.txt" \
   -c "./cookies.txt" \
-  -o "./freednsCaptchaResponse.html" \
+  -o "./freednsCaptchaResponse.png" \
   -L --silent
 
   if ! install_pkg_on_unknown_distro chafa; then
     error "Unable to find package manager to install $(cli color bold cyan "chafa"), please do manually."
 fi 
+  if ! install_pkg_on_unknown_distro jq; then
+    error "Unable to find package manager to install $(cli color bold cyan "jq"), please do manually."
+  fi
 
-  chafa --size 80x30 './freednsCaptchaResponse.html'
+  chafa --size 80x30 './freednsCaptchaResponse.png'
 
-  captchaCode="";
+  info "Trying to solve captcha using AI"
+  captchaCode=""
+  captchaCode=$(resolveCaptcha './freednsCaptchaResponse.png')
+
+  echo "Captcha resolved by AI: $(cli color bold cyan "$captchaCode")";
+
   read -r -p "Please, enter the captcha text and press enter: " captchaCode
-  # TODO: OCR to bypass captcha auto.
+  # TODO: Try OCR instead of AI to complete captcha.
 
   echo "Captcha is: $captchaCode"
 
