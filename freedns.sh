@@ -72,8 +72,8 @@ $(cli color bold red USAGE)
 
 $(cli color bold red COMMANDS)
   $(cli color bold green account)
-    $(cli color bold cyan create)
-    $(cli color bold cyan login) (-e|--email) <email> (-p|--password) <password>
+    $(cli color bold cyan create) --email --password --firstname --lastname --username 
+    $(cli color bold cyan login) --email --password 
     $(cli color bold cyan status)
     $(cli color bold cyan logout)
     $(cli color bold cyan edit)
@@ -87,7 +87,7 @@ $(cli color bold red COMMANDS)
 
   $(cli color bold green subdomain)
     $(cli color bold cyan available)
-    $(cli color bold cyan create) (--domain) <domain> (-s|--subdomain) <subdomain> 
+    $(cli color bold cyan create) --domain --subdomain ( --record --address ) 
     $(cli color bold cyan list)
     $(cli color bold cyan edit)
     $(cli color bold cyan delete)
@@ -394,7 +394,9 @@ accountStatus() {
 }
 
 accountLogout() {
-  warning "Not implemented"
+  [[ -f './cookies.txt' ]] && rm -f './cookies.txt' 
+  info "You are logged out"
+  builtin exit
 }
 
 accountEdit() {
