@@ -85,7 +85,7 @@ $(cli color bold red COMMANDS)
 
   $(cli color bold green subdomain)
     $(cli color bold cyan available)
-    $(cli color bold cyan create)
+    $(cli color bold cyan create) (--domain) <domain> (-s|--subdomain) <subdomain> 
     $(cli color bold cyan list)
     $(cli color bold cyan edit)
     $(cli color bold cyan delete)
@@ -94,7 +94,7 @@ $(cli color bold red OPTIONS)
 -a, --address
 -e, --email      
 -p, --password   
--d, --domain     
+    --domain     
 -s, --subdomain
 -r, --record A AAAA CNAME CAA NS MX TXT SPF LOC HINFO RP SVR SSHFP
     --record-value  
@@ -106,7 +106,9 @@ $(cli color bold red OPTIONS)
 --version
 
 $(cli color bold red EXAMPLES)
-freedns $(cli color bold green account) $(cli color bold cyan login) -e stringmanolo@gmail.com -p myPassword -vd
+./freedns.sh $(cli color bold green account) $(cli color bold cyan login) -e stringmanolo@gmail.com -p myPassword 
+./freedns.sh $(cli color bold green subdomain) $(cli color bold cyan available)
+./freedns.sh $(cli color bold green subdomain) $(cli color bold cyan create) --domain mooo.com --subdomain stringmanolo  
 
 SHOWUSAGE
 
@@ -115,7 +117,7 @@ builtin exit
 
 
 getSubdomainID() {
-  local CONFIG_FILE="subdomainList.config"
+  local CONFIG_FILE="./subdomainList.config"
   local domain="$1"
   
   if [[ ! -f "$CONFIG_FILE" ]]; then
@@ -123,16 +125,16 @@ getSubdomainID() {
   fi
   
   local result=$(grep -i "^$domain " "$CONFIG_FILE" | head -1)
-  
+
   if [[ -z "$result" ]]; then
-    error "subdomain $(cli color bold yellow "$domain") not found in $(cli color bold yellow "$CONFIG_FILE")" 
+    error "subdomain $(cli color bold yellow "$domain") not found in $(cli color bold yellow "$CONFIG_FILE")"
   fi
   
   echo "$result" | awk '{print $2}'
 }
 
 listSubdomains() {
-  local CONFIG_FILE="subdomainList.config"
+  local CONFIG_FILE="./subdomainList.config"
   if [[ ! -f "$CONFIG_FILE" ]]; then
     error "Error: Config file $(cli color bold yellow "$CONFIG_FILE") not found"
   fi
@@ -341,8 +343,6 @@ subdomainAvailable() {
 }
 
 subdomainCreate() {
-  warning "Not implemented"
- 
   # TODO Only info on -v or -d
   info 'Getting captcha ...'
   curl 'https://freedns.afraid.org/securimage/securimage_show.php' \
@@ -361,24 +361,26 @@ fi
   chafa --size 80x30 './freednsCaptchaResponse.png'
 
   # info "Trying to solve captcha using AI"
-  captchaCode=""
+  local captchaCode=""
   # captchaCode=$(resolveCaptcha './freednsCaptchaResponse.png')
-
-  echo "Captcha resolved by AI: $(cli color bold cyan "$captchaCode")";
+  # info "Captcha resolved by AI: $(cli color bold cyan "$captchaCode")";
 
   read -r -p "Please, enter the captcha text and press enter: " captchaCode
   # TODO: Try OCR instead of AI to complete captcha.
 
-  echo "Captcha is: $captchaCode"
+  # echo "Captcha is: $captchaCode"
 
-  # TODO: Get id of domain from web list by searching user provided --domain
-  # TODO: Options to show list of available domains and their ids
-  domainID=29;
-  subdomain=""
-  address="1.2.3.4"
-  record=""
+  local domainID=29;
+  local domain="";
+  local subdomain=""
+  local address="127.0.0.1"
+  local record="A"
+
+  cli c domain && domain=${__CLI_C[domain]}
+  domainID=$(getSubdomainID $domain)
+
   cli s s && subdomain=${__CLI_S[s]}
-  cli c subdomain && subdomain=${__CLI_C[subdomain]} 
+  cli c subdomain && subdomain=${__CLI_C[subdomain]}
 
   cli s a && address=${__CLI_S[a]}
   cli c address && address=${__CLI_C[address]}
@@ -386,7 +388,9 @@ fi
   cli s r && record=${__CLI_S[r]}
   cli c record && record=${__CLI_C[record]}
 
-  curl -X POST "'https://freedns.afraid.org/subdomain/save.php?step=2" \
+  info "Record:$(cli color bold cyan $record). Address:$(cli color bold cyan $address). Captcha:$(cli color bold cyan $captchaCode). DomainID:$(cli color bold cyan $domainID)"
+
+  curl -X POST 'https://freedns.afraid.org/subdomain/save.php?step=2' \
   -b "./cookies.txt" \
   -c "./cookies.txt" \
   -d "type=$record" \
@@ -398,10 +402,17 @@ fi
   -d 'ref=L3N1YmRvbWFpby8=' \
   -d "captcha_code=$captchaCode" \
   -d 'send=Save!' \
-  --silent -L -o freedns_subdomain_creation_response.html
+  -o "./freedns_subdomain_creation_response.html" \
+  -L --silent 
+  
+  grep -q 'The security code was incorrect, please try again' './freedns_subdomain_creation_response.html' && error "The captcha $(cli color bold red "$captchaCode") was wrong. Try again"
+  grep -q '<TITLE>Problems!</TITLE>' './freedns_subdomain_creation_response.html' && error "Unable to create the subdomain $(cli color bold cyan "$subdomain").$(cli color bold yellow "$domain") for unknown reassons
+ 
+Make sure you are logged in
+"
 
-  # TODO: Check if subdomain was created sucessfully by checking /domains web and grep the domain from the html
-  warning "Subdomain creation check not implemented"
+  rm './freedns_subdomain_creation_response.html'
+  exit "Subdomain $(cli color bold cyan "$subdomain").$(cli color bold yellow "$domain") created"
 
 }
 
@@ -463,6 +474,5 @@ elif [[ $cmd =~ ^help$         ]]  ;then    showUsage
 else
   error "The command $(cli color bold red $cmd) is not a valid command"
 fi
-
 
 
