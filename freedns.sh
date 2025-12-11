@@ -8,6 +8,7 @@ version="FreeDNS $(cli color bold green 0.0.1) by https://github.com/stringmanol
 verbose=false
 debug=false
 
+# This is for install dependencies like CHAFA to view captchas in terminal, etc.
 install_pkg_on_unknown_distro() {
   if [ -z "$1" ]; then
     return 1
@@ -39,6 +40,7 @@ install_pkg_on_unknown_distro() {
   return 1
 }
 
+# Ouput utils
 exit() {
   local msg="$1"
   echo -e "$msg"
@@ -62,7 +64,7 @@ warning() {
   echo "$(cli color yellow [WARNING]) $1"
 }
 
-
+# Printing when using ./freedns.sh help ./freedns.sh ./freedns.sh --help, etc.
 showUsage() {
 cat << SHOWUSAGE
 $(cli color bold red USAGE)
@@ -119,7 +121,7 @@ SHOWUSAGE
 builtin exit
 }
 
-
+# The HTTP Request to subdomain creation needs an ID for the domain. 
 getSubdomainID() {
   local CONFIG_FILE="./subdomainList.config"
   local domain="$1"
@@ -137,17 +139,9 @@ getSubdomainID() {
   echo "$result" | awk '{print $2}'
 }
 
-listSubdomains() {
-  local CONFIG_FILE="./subdomainList.config"
-  if [[ ! -f "$CONFIG_FILE" ]]; then
-    error "Error: Config file $(cli color bold yellow "$CONFIG_FILE") not found"
-  fi
-    
-  echo "Subdomains in $(cli color bold yellow "$CONFIG_FILE"):"
-  echo "----------------------"
-  column -t "$CONFIG_FILE" 2>/dev/null || cat "$CONFIG_FILE"
-}
-
+# THIS DOES NOT WORK, NEED SOME TWEAKS TO MAKE IT WORK. BUT I DON'T NEED AUTOMATION ANYWAYS. NOT WORTH THE TIME INVESTMENT.
+# KEEPING IT HERE IN CASE I WAMT TO PLAY AROUND WITH IT.
+# Try to resolve captcha without user interaction using Gemini 2.5-flash model.
 resolveCaptcha() {
   IMAGE_PATH="$1"
 
@@ -203,23 +197,20 @@ resolveCaptcha() {
   echo "$CAPTCHA_TEXT"
 }
 
+# Create a new account
 accountCreate() {
-  # Get user information from CLI arguments
   local firstname=""
   local lastname=""
   local username=""
   local password=""
   local email=""
   
-  # Get email with both short and long options
   cli s e && email=${__CLI_S[e]}
   cli c email && email=${__CLI_C[email]}
   
-  # Get password with both short and long options
   cli s p && password=${__CLI_S[p]}
   cli c password && password=${__CLI_C[password]}
   
-  # Get other fields
   cli c firstname && firstname=${__CLI_C[firstname]}
   cli c lastname && lastname=${__CLI_C[lastname]}
   cli c username && username=${__CLI_C[username]}
@@ -240,8 +231,8 @@ accountCreate() {
     error "Email $(cli color bold red "$email") is not valid"
   
   info "Getting captcha for signup..."
-  
-  # Get initial cookies
+ 
+  # Get cookies to simulate already being at the signup page (probably not needed)
   curl 'https://freedns.afraid.org/signup/' \
     -c "./account_create_cookies.txt" \
     -o "./account_create_page.html" \
@@ -254,12 +245,15 @@ accountCreate() {
     -o "./account_create_captcha.png" \
     -L --silent >/dev/null 2>&1
   
-  # Install and display CAPTCHA with chafa
+  # Install chafa to print captcha directly into terminal
   if ! install_pkg_on_unknown_distro chafa; then
     warning "Unable to install $(cli color bold cyan chafa) to display captcha"
   fi
   
   if command -v chafa &> /dev/null; then
+    # 80x30 This same ratio as original image but smaller to fit into screen
+    # If you edit the width / height try to keep the same aspect ratio (quality)
+    # A.K.A multiply both numbers for the same number: 80x30 * 1.5 === 120x45
     chafa --size 80x30 './account_create_captcha.png'
   else
     info "Captcha saved to: $(cli color bold cyan ./account_create_captcha.png)"
@@ -274,7 +268,7 @@ accountCreate() {
   
   info "Creating account $(cli color bold cyan "$username")..."
   
-  # Submit signup form
+  # Submit signup request
   curl -X POST 'https://freedns.afraid.org/signup/?step=2' \
     -b "./account_create_cookies.txt" \
     -c "./account_create_cookies.txt" \
@@ -311,6 +305,7 @@ accountCreate() {
       "./account_create_page.html" "./account_create_response.html"
     error "Email $(cli color bold red "$email") is already registered"
   fi
+
   # If we got here, account creation was likely successful
   success "Account created"
   info "Activation email sent to: $(cli color bold cyan "$email")"
@@ -351,6 +346,7 @@ accountCreate() {
 If you can't log in, try the link $(cli color bold cyan "$activationLink") directly on any browser"
 }
 
+# Log into the account (A.K.A get the session cookies) 
 accountLogin() {
   # Get email
   email="[MISSING]"
@@ -367,7 +363,7 @@ accountLogin() {
     error "Password $(cli color bold red "$password") is not valid.
   4 to 16 characters required and your password is $(cli color bold red "${#password}") characters long"
 
-  
+  # Try to log into the account
   [[ -f './freednsresponse.html' ]] &&  rm './freednsresponse.html';
   curl -X POST 'https://freedns.afraid.org/zc.php?step=2' \
   -d "username=$email" \
@@ -377,13 +373,13 @@ accountLogin() {
   -c "./cookies.txt" \
   -o './freednsresponse.html' \
   -L --silent
-
+ 
+  # Find "Logged in as" text into the html response to confirm user is logged in.
   grep -q 'Logged in as ' './freednsresponse.html' ||  (rm './cookies.txt' && error "Unable to login. Make sure your credentials are correct.
   Email: $(cli color bold cyan "$email") 
   Password: $(cli color bold cyan "$password")
 
   If everything is right check the file $(cli color bold cyan "./freednsresponse.html")");
-
 
 
   # Here user logged in sucessfully
@@ -554,6 +550,7 @@ fi
   -L --silent 
   
   grep -q 'The security code was incorrect, please try again' './freedns_subdomain_creation_response.html' && error "The captcha $(cli color bold red "$captchaCode") was wrong. Try again"
+  grep -q "The hostname <b>$subdomain.$domain</b> is already taken!" './freedns_subdomain_creation_response.html' && error "The domain $(cli color bold cyan "$subdomain").$(cli color bold yellow "$domain") is already taken by someone else."
   grep -q '<TITLE>Problems!</TITLE>' './freedns_subdomain_creation_response.html' && error "Unable to create the subdomain $(cli color bold cyan "$subdomain").$(cli color bold yellow "$domain") for unknown reassons
  
 Make sure you are logged in
