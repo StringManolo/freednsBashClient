@@ -99,14 +99,18 @@ $(cli color bold red OPTIONS)
 -r, --record A AAAA CNAME CAA NS MX TXT SPF LOC HINFO RP SVR SSHFP
     --record-value  
     --destination
-    
+    --firstname
+    --lastname
+    --username
+
 -v, --verbose
 -d, --debug
 
 --version
 
 $(cli color bold red EXAMPLES)
-./freedns.sh $(cli color bold green account) $(cli color bold cyan login) -e stringmanolo@gmail.com -p myPassword 
+./freedns.sh $(cli color bold green account) $(cli color bold cyan create) --firstname Manolo --lastname String --username stringmanolo --email stringmanolo@gmail.com --password myPassword123
+./freedns.sh $(cli color bold green account) $(cli color bold cyan login) -e stringmanolo@gmail.com -p myPassword123 
 ./freedns.sh $(cli color bold green subdomain) $(cli color bold cyan available)
 ./freedns.sh $(cli color bold green subdomain) $(cli color bold cyan create) --domain mooo.com --subdomain stringmanolo  
 
@@ -200,7 +204,151 @@ resolveCaptcha() {
 }
 
 accountCreate() {
-  warning "Not implemented"
+  # Get user information from CLI arguments
+  local firstname=""
+  local lastname=""
+  local username=""
+  local password=""
+  local email=""
+  
+  # Get email with both short and long options
+  cli s e && email=${__CLI_S[e]}
+  cli c email && email=${__CLI_C[email]}
+  
+  # Get password with both short and long options
+  cli s p && password=${__CLI_S[p]}
+  cli c password && password=${__CLI_C[password]}
+  
+  # Get other fields
+  cli c firstname && firstname=${__CLI_C[firstname]}
+  cli c lastname && lastname=${__CLI_C[lastname]}
+  cli c username && username=${__CLI_C[username]}
+  
+  [[ -z "$firstname" ]] && error "First name is required. Use --firstname"
+  [[ -z "$lastname" ]] && error "Last name is required. Use --lastname"
+  [[ -z "$username" ]] && error "Username is required. Use --username"
+  [[ -z "$password" ]] && error "Password is required. Use -p or --password"
+  [[ -z "$email" ]] && error "Email is required. Use -e or --email"
+  
+  [[ ! $username =~ ^[a-zA-Z0-9]{3,16}$ ]] && 
+    error "Username must be 3-16 characters and alphanumeric only"
+  
+  [[ ! $password =~ ^.{4,16}$ ]] &&
+    error "Password must be 4-16 characters"
+  
+  [[ ! $email =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,15}$ ]] &&
+    error "Email $(cli color bold red "$email") is not valid"
+  
+  info "Getting captcha for signup..."
+  
+  # Get initial cookies
+  curl 'https://freedns.afraid.org/signup/' \
+    -c "./account_create_cookies.txt" \
+    -o "./account_create_page.html" \
+    -L --silent >/dev/null 2>&1
+  
+  # Get CAPTCHA image
+  curl 'https://freedns.afraid.org/securimage/securimage_show.php' \
+    -b "./account_create_cookies.txt" \
+    -c "./account_create_cookies.txt" \
+    -o "./account_create_captcha.png" \
+    -L --silent >/dev/null 2>&1
+  
+  # Install and display CAPTCHA with chafa
+  if ! install_pkg_on_unknown_distro chafa; then
+    warning "Unable to install $(cli color bold cyan chafa) to display captcha"
+  fi
+  
+  if command -v chafa &> /dev/null; then
+    chafa --size 80x30 './account_create_captcha.png'
+  else
+    info "Captcha saved to: $(cli color bold cyan ./account_create_captcha.png)"
+    info "Open the image to see the captcha"
+  fi
+  
+  # Get CAPTCHA from user
+  local captchaCode=""
+  while [[ -z "$captchaCode" ]]; do
+    read -r -p "$(cli color cyan "Enter captcha text"): " captchaCode
+  done
+  
+  info "Creating account $(cli color bold cyan "$username")..."
+  
+  # Submit signup form
+  curl -X POST 'https://freedns.afraid.org/signup/?step=2' \
+    -b "./account_create_cookies.txt" \
+    -c "./account_create_cookies.txt" \
+    -d "plan=starter" \
+    -d "firstname=$firstname" \
+    -d "lastname=$lastname" \
+    -d "username=$username" \
+    -d "password=$password" \
+    -d "password2=$password" \
+    -d "email=$email" \
+    -d "captcha_code=$captchaCode" \
+    -d "tos=1" \
+    -d "action=signup" \
+    -d "send=Send+activation+email" \
+    -o "./account_create_response.html" \
+    -L --silent >/dev/null 2>&1
+  
+  # Check for errors in response
+  if grep -q "The security code was incorrect" "./account_create_response.html"; then
+    rm -f "./account_create_cookies.txt" "./account_create_captcha.png" \
+      "./account_create_page.html" "./account_create_response.html"
+    error "Captcha $(cli color bold red "$captchaCode") was wrong. Try again"
+  fi
+  
+  if grep -q "Username already exists" "./account_create_response.html" || 
+     grep -q "Username in use" "./account_create_response.html"; then
+    rm -f "./account_create_cookies.txt" "./account_create_captcha.png" \
+      "./account_create_page.html" "./account_create_response.html"
+    error "Username $(cli color bold red "$username") is already taken. Choose another"
+  fi
+  
+  if grep -q "That e-mail is in use" "./account_create_response.html"; then
+    rm -f "./account_create_cookies.txt" "./account_create_captcha.png" \
+      "./account_create_page.html" "./account_create_response.html"
+    error "Email $(cli color bold red "$email") is already registered"
+  fi
+  # If we got here, account creation was likely successful
+  success "Account created"
+  info "Activation email sent to: $(cli color bold cyan "$email")"
+  warning "Check your spam folder if you don't see it in your inbox."
+  echo ""
+  
+  # Ask for activation code
+  local activationLink=""
+  info "Open your email and find the activation link. Email takes around 30s to be available in your Spam folder"
+  info "You can paste the activation link here or in your browser. Link should be something like $(cli color bold cyan "http://freedns.afraid.org/signup/activate.php?QWuZMkdyws2IlIWJSdowxMHBa")"
+  echo ""
+  
+  while [[ -z "$activationLink" ]]; do
+    read -r -p "$(cli color cyan "Enter URL"): " activationLink
+  done
+  
+  info "Activating account with URL: $(cli color bold cyan "$activationLink")"
+  
+  # Activate account
+  curl "$activationLink" \
+    -b "./account_create_cookies.txt" \
+    -c "./account_create_cookies.txt" \
+    -L --silent >/dev/null 2>&1
+
+  # Not saving response. Asuming accoint activation worked
+  # -o "./account_activate_response.html" \
+
+  # Cleanup
+  rm -f "./account_create_cookies.txt" "./account_create_captcha.png" \
+    "./account_create_page.html" "./account_create_response.html" \
+    "./account_activate_response.html"
+
+  echo ""
+  exit "Account activated. Use next command to log in.
+
+./freedns.sh $(cli color bold green account) $(cli color bold cyan login) -e $email -p $password 
+
+If you can't log in, try the link $(cli color bold cyan "$activationLink") directly on any browser"
 }
 
 accountLogin() {
