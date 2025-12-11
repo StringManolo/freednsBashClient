@@ -80,19 +80,86 @@ SHOWUSAGE
 builtin exit
 }
 
+accountCreate() {
+  warning "Not implemented"
+}
 
+accountLogin() {
+  warning "Not implemented"
+  email="[MISSING]"
+  cli s e && email=${__CLI_S[e]}
+  cli c email && email=${__CLI_C[email]}
+  if [[ ! $email =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,15}$ ]]  ;then
+    error "Email $(cli color bold red "$email") is not valid"
+  fi
 
+}
 
+accountStatus() {
+  warning "Not implemented"
+}
+
+accountLogout() {
+  warning "Not implemented"
+}
+
+accountEdit() {
+  warning "Not implemented"
+}
+
+accountDelete() {
+  warning "Not implemented"
+}
+
+domainCreate() {
+  warning "Not implemented"
+}
+
+domainList() {
+  warning "Not implemented"
+}
+
+domainEdit() {
+  warning "Not implemented"
+}
+
+subdomainCreate() {
+  warning "Not implemented"
+}
+
+subdomainList() {
+  warning "Not implemented"
+}
+
+subdomainEdit() {
+  warning "Not implemented"
+}
 
 cmd=$(cli o | sed -n '1p')
 subcmd=$(cli o | sed -n '2p')
 subsubcmd=$(cli o | sed -n '3p')
+
+: << OPTIONS
+-e, --email
+-p, --password
+-d, --domain
+-s, --subdomain
+-r, --record A AAAA CNAME CAA NS MX TXT SPF LOC HINFO RP SVR SSHFP
+    --destination
+-c, --captcha
+
+-v, --verbose
+-d, --debug
+
+--version
+OPTIONS
 
 if      cli noArgs              ;then    showUsage                 ;fi
 if cli s h || cli c help        ;then    showUsage                 ;fi
 if cli s v || cli c verbose     ;then    verbose=true              ;fi
 if cli s d || cli c debug       ;then    debug=true                ;fi 
 if            cli c version     ;then    exit "$version"           ;fi
+
 
 if [[ $cmd =~ ^account$  ]]     ;then
   if [[ $subcmd =~ ^create$ ]]  ;then    accountCreate             ;elif 
