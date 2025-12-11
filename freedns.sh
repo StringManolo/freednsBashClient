@@ -71,7 +71,7 @@ $(cli color bold red USAGE)
 $(cli color bold red COMMANDS)
   $(cli color bold green account)
     $(cli color bold cyan create)
-    $(cli color bold cyan login)
+    $(cli color bold cyan login) (-e|--email) <email> (-p|--password) <password>
     $(cli color bold cyan status)
     $(cli color bold cyan logout)
     $(cli color bold cyan edit)
@@ -81,11 +81,14 @@ $(cli color bold red COMMANDS)
     $(cli color bold cyan create)
     $(cli color bold cyan list)
     $(cli color bold cyan edit)
+    $(cli color bold cyan delete)
 
   $(cli color bold green subdomain)
+    $(cli color bold cyan available)
     $(cli color bold cyan create)
     $(cli color bold cyan list)
     $(cli color bold cyan edit)
+    $(cli color bold cyan delete)
 
 $(cli color bold red OPTIONS)
 -a, --address
@@ -94,8 +97,8 @@ $(cli color bold red OPTIONS)
 -d, --domain     
 -s, --subdomain
 -r, --record A AAAA CNAME CAA NS MX TXT SPF LOC HINFO RP SVR SSHFP
+    --record-value  
     --destination
--c, --captcha
     
 -v, --verbose
 -d, --debug
@@ -111,6 +114,33 @@ builtin exit
 }
 
 
+getSubdomainID() {
+  local CONFIG_FILE="subdomainList.config"
+  local domain="$1"
+  
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    error "Error: Config file $(cli color bold yellow "$CONFIG_FILE") not found"
+  fi
+  
+  local result=$(grep -i "^$domain " "$CONFIG_FILE" | head -1)
+  
+  if [[ -z "$result" ]]; then
+    error "subdomain $(cli color bold yellow "$domain") not found in $(cli color bold yellow "$CONFIG_FILE")" 
+  fi
+  
+  echo "$result" | awk '{print $2}'
+}
+
+listSubdomains() {
+  local CONFIG_FILE="subdomainList.config"
+  if [[ ! -f "$CONFIG_FILE" ]]; then
+    error "Error: Config file $(cli color bold yellow "$CONFIG_FILE") not found"
+  fi
+    
+  echo "Subdomains in $(cli color bold yellow "$CONFIG_FILE"):"
+  echo "----------------------"
+  column -t "$CONFIG_FILE" 2>/dev/null || cat "$CONFIG_FILE"
+}
 
 resolveCaptcha() {
   IMAGE_PATH="$1"
@@ -167,8 +197,6 @@ resolveCaptcha() {
   echo "$CAPTCHA_TEXT"
 }
 
-
-
 accountCreate() {
   warning "Not implemented"
 }
@@ -200,11 +228,13 @@ accountLogin() {
   -o './freednsresponse.html' \
   -L --silent
 
-  grep -q 'Logged in as ' './freednsresponse.html' ||  rm './cookies.txt' && error "Unable to login. Make sure your credentials are correct.
+  grep -q 'Logged in as ' './freednsresponse.html' ||  (rm './cookies.txt' && error "Unable to login. Make sure your credentials are correct.
   Email: $(cli color bold cyan "$email") 
   Password: $(cli color bold cyan "$password")
 
-  If everything is right check the file $(cli color bold cyan "./freednsresponse.html")";
+  If everything is right check the file $(cli color bold cyan "./freednsresponse.html")");
+
+
 
   # Here user logged in sucessfully
   [[ -f './freednsresponse.html' ]] &&  rm './freednsresponse.html';
@@ -241,6 +271,75 @@ domainEdit() {
   warning "Not implemented"
 }
 
+domainDelete() {
+  warning "Not implemented"
+}
+
+subdomainAvailable() {
+  local config_file="subdomainList.config"
+  local total=$(wc -l < "$config_file")
+
+  if [[ ! -f "$config_file" ]]; then
+    error "No available domains. Config file $(cli color bold yellow "$config_file") not found"
+    return 1
+  fi
+
+  echo ""
+  echo "Popular domains offering subdomains"
+  echo "$(cli color bold white "  -----------------------------------------------------------------------")"
+  echo ""
+
+  local coloredDomain=0
+  local input_data=""
+
+  while IFS=' ' read -r domain _; do
+    
+    if [[ $coloredDomain -eq 0 ]]; then
+      local colored_domain="$(cli color bold yellow "$domain")" 
+    else
+      local colored_domain="$(cli color bold cyan "$domain")"
+    fi
+
+    input_data+="$colored_domain\n" 
+    coloredDomain=$(( 1 - coloredDomain ))
+  done < "$config_file"
+
+  echo -e "$input_data" | awk '
+  {
+    line = $0
+    temp_line = line
+    
+    gsub(/\x1b\[[0-9;]*m/, "", temp_line)
+    
+    len = length(temp_line)
+    
+    columnas = 3
+    ancho_columna = 26 
+    
+    padding = ancho_columna - len
+
+    printf("  %s", line)
+    
+    for (i = 0; i < padding; i++) {
+      printf(" ")
+    }
+
+    if (NR % columnas == 0) {
+      printf("\n\n")
+    }
+  }
+  END {
+    if (NR % columnas != 0) {
+      printf("\n")
+    }
+  }'
+
+  echo ""
+  echo "$(cli color bold white "  -----------------------------------------------------------------------")"
+  echo ""
+  info "Found $(cli color cyan "$total") domains available"
+}
+
 subdomainCreate() {
   warning "Not implemented"
  
@@ -261,9 +360,9 @@ fi
 
   chafa --size 80x30 './freednsCaptchaResponse.png'
 
-  info "Trying to solve captcha using AI"
+  # info "Trying to solve captcha using AI"
   captchaCode=""
-  captchaCode=$(resolveCaptcha './freednsCaptchaResponse.png')
+  # captchaCode=$(resolveCaptcha './freednsCaptchaResponse.png')
 
   echo "Captcha resolved by AI: $(cli color bold cyan "$captchaCode")";
 
@@ -314,46 +413,52 @@ subdomainEdit() {
   warning "Not implemented"
 }
 
+subdomainDelete() {
+  warning "Not implemented"
+}
+
 cmd=$(cli o | sed -n '1p')
 subcmd=$(cli o | sed -n '2p')
 subsubcmd=$(cli o | sed -n '3p')
 
-if      cli noArgs              ;then    showUsage                 ;fi
-if cli s h || cli c help        ;then    showUsage                 ;fi
-if cli s v || cli c verbose     ;then    verbose=true              ;fi
-if cli s d || cli c debug       ;then    debug=true                ;fi 
-if            cli c version     ;then    exit "$version"           ;fi
+if      cli noArgs                 ;then    showUsage                 ;fi
+if cli s h || cli c help           ;then    showUsage                 ;fi
+if cli s v || cli c verbose        ;then    verbose=true              ;fi
+if cli s d || cli c debug          ;then    debug=true                ;fi 
+if            cli c version        ;then    exit "$version"           ;fi
 
 
-if [[ $cmd =~ ^account$  ]]     ;then
-  if [[ $subcmd =~ ^create$ ]]  ;then    accountCreate             ;elif 
-     [[ $subcmd =~ ^login$  ]]  ;then    accountLogin              ;elif
-     [[ $subcmd =~ ^status$ ]]  ;then    accountStatus             ;elif
-     [[ $subcmd =~ ^logout$ ]]  ;then    accountLogout             ;elif
-     [[ $subcmd =~ ^edit$   ]]  ;then    accountEdit               ;elif
-     [[ $subcmd =~ ^delete$ ]]  ;then    accountDelete             ;else
-     [[    -z $subcmd       ]]    &&     error "You need to provide a subcommand" ||
+if [[ $cmd =~ ^account$        ]]  ;then
+  if [[ $subcmd =~ ^create$    ]]  ;then    accountCreate             ;elif 
+     [[ $subcmd =~ ^login$     ]]  ;then    accountLogin              ;elif
+     [[ $subcmd =~ ^status$    ]]  ;then    accountStatus             ;elif
+     [[ $subcmd =~ ^logout$    ]]  ;then    accountLogout             ;elif
+     [[ $subcmd =~ ^edit$      ]]  ;then    accountEdit               ;elif
+     [[ $subcmd =~ ^delete$    ]]  ;then    accountDelete             ;else
+     [[    -z $subcmd          ]]    &&     error "You need to provide a subcommand" ||
        error "The subcommand $(cli color bold red $subcmd) is not valid for $(cli color bold green account)" ;
   fi 
 
-elif [[ $cmd =~ ^domain$    ]]  ;then  
-  if [[ $subcmd =~ ^create$ ]]  ;then    domainCreate              ;elif
-     [[ $subcmd =~ ^list$   ]]  ;then    domainList                ;elif
-     [[ $subcmd =~ ^edit$   ]]  ;then    domainEdit                ;else
-     [[    -z $subcmd       ]]    &&     error "You need to provide a subcommand" ||
+elif [[ $cmd =~ ^domain$       ]]  ;then  
+  if [[ $subcmd =~ ^create$    ]]  ;then    domainCreate              ;elif
+     [[ $subcmd =~ ^list$      ]]  ;then    domainList                ;elif
+     [[ $subcmd =~ ^delete$    ]]  ;then    domainDelete              ;elif
+     [[ $subcmd =~ ^edit$      ]]  ;then    domainEdit                ;else
+     [[    -z $subcmd          ]]    &&     error "You need to provide a subcommand" ||
        error "The subcommand $(cli color bold red $subcmd) is not valid for $(cli color bold green domain)" ;
   fi
 
-elif [[ $cmd =~ ^subdomain$ ]]  ;then
-  if [[ $subcmd =~ ^create$ ]]  ;then    subdomainCreate           ;elif
-     [[ $subcmd =~ ^list$   ]]  ;then    subdomainList             ;elif
-     [[ $subcmd =~ ^edit$   ]]  ;then    subdomainEdit             ;else
-     [[    -z $subcmd       ]]    &&     error "You need to provide a subcommand" ||
+elif [[ $cmd =~ ^subdomain$    ]]  ;then
+  if [[ $subcmd =~ ^available$ ]]  ;then    subdomainAvailable        ;elif
+     [[ $subcmd =~ ^create$    ]]  ;then    subdomainCreate           ;elif
+     [[ $subcmd =~ ^list$      ]]  ;then    subdomainList             ;elif
+     [[ $subcmd =~ ^delete$    ]]  ;then    subdomainDelete           ;elif
+     [[ $subcmd =~ ^edit$      ]]  ;then    subdomainEdit             ;else
+     [[    -z $subcmd          ]]    &&     error "You need to provide a subcommand" ||
        error "The subcommand $(cli color bold red $subcmd) is not valid for $(cli color bold green subdomain)" ;
   fi
 
-elif [[ $cmd =~ ^help$      ]]  ;then    showUsage 
-
+elif [[ $cmd =~ ^help$         ]]  ;then    showUsage 
 
 else
   error "The command $(cli color bold red $cmd) is not a valid command"
